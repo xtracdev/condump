@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Create a service running the containe dump utility. This is a container we'll
+  want to place on each cluster member, but we'll want a single instance of the container
+  in all instances so there will be no need to use auto scaling.
+
+Parameters:
+  LambdaArn:
+    Description: Lambda function arn to send cloud watch log output to Sumo Logic
+    Type: String
+  ECSCluster:
+    Type: String
+  Registry:
+    Type: String
+    Default: docker.io
+
+Resources:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['-', [ECSLogGroup, !Ref 'AWS::StackName']]
+      RetentionInDays: 14
+
+  LogSubscriptionFilter:
+    Type: "AWS::Logs::SubscriptionFilter"
+    Properties:
+      LogGroupName:
+        Ref: "CloudwatchLogsGroup"
+      FilterPattern: ""
+      DestinationArn: !Ref LambdaArn
+
+  ConDumpTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: AtomPubTask
+      ContainerDefinitions:
+        -
+          Name: atomfeedpub
+          Image: !Join ['/', [!Ref Registry, 'xtracdev/condump:latest']]
+          Memory: 256
+          Cpu: 256
+
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref 'CloudwatchLogsGroup'
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs-demo-app
+
+  ConDumpService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      DesiredCount: '1'
+      TaskDefinition: !Ref 'ConDumpTaskDef'
